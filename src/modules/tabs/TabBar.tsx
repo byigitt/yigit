@@ -301,6 +301,12 @@ export function TabBar({
                       onPointerUp={handlePointerUp}
                       onPointerCancel={handlePointerCancel}
                       onClickCapture={handleClickCapture}
+                      onAuxClick={(e) => {
+                        if (e.button !== 1 || isRenaming) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onClose(t.id);
+                      }}
                       className={cn(
                         "relative shrink-0 touch-none",
                         isDragging && "opacity-40",
