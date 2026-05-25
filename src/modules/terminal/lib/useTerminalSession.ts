@@ -465,6 +465,14 @@ export function useTerminalSession({
     [leafId],
   );
 
+  /** xterm-side paste that wraps with bracketed paste markers when the shell
+   *  enabled `\e[?2004h`, and normalizes `\n` to `\r`. Safe for arbitrary
+   *  dropped text without executing commands by accident. */
+  const paste = useCallback(
+    (data: string) => getSlotForLeaf(leafId)?.term.paste(data),
+    [leafId],
+  );
+
   const focus = useCallback(() => focusSlot(leafId), [leafId]);
 
   const getBuffer = useCallback(
@@ -504,8 +512,8 @@ export function useTerminalSession({
   }, []);
 
   return useMemo(
-    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
-    [write, focus, getBuffer, getSelection, applyTheme],
+    () => ({ write, paste, focus, getBuffer, getSelection, applyTheme }),
+    [write, paste, focus, getBuffer, getSelection, applyTheme],
   );
 }
 
