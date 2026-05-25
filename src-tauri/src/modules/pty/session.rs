@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::agent_detect::AgentDetector;
 use super::da_filter::DaFilter;
+use super::osc_color_filter::OscColorFilter;
 use super::shell_init;
 use crate::modules::workspace::WorkspaceEnv;
 
@@ -166,6 +167,8 @@ pub fn spawn(
             let mut buf = [0u8; READ_BUF];
             let mut filtered: Vec<u8> = Vec::with_capacity(READ_BUF);
             let mut da_filter = DaFilter::new();
+            let mut osc_color_filter = OscColorFilter::new();
+            let mut osc_intermediate: Vec<u8> = Vec::with_capacity(READ_BUF);
             let mut agent_detect = AgentDetector::new();
             let mut dropped_bytes: u64 = 0;
             let mut logged_first = false;
@@ -181,7 +184,13 @@ pub fn spawn(
                             let _ = app_reader.emit(AGENT_EVENT, t.into_signal(id));
                         });
                         filtered.clear();
-                        da_filter.process(&buf[..n], &mut filtered, |reply| {
+                        osc_intermediate.clear();
+                        osc_color_filter.process(&buf[..n], &mut osc_intermediate, |reply| {
+                            if let Ok(mut w) = writer_for_da.lock() {
+                                let _ = w.write_all(reply);
+                            }
+                        });
+                        da_filter.process(&osc_intermediate, &mut filtered, |reply| {
                             if let Ok(mut w) = writer_for_da.lock() {
                                 let _ = w.write_all(reply);
                             }

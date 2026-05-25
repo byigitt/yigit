@@ -1,5 +1,6 @@
 mod agent_detect;
 mod da_filter;
+mod osc_color_filter;
 #[cfg(windows)]
 mod job;
 mod session;
