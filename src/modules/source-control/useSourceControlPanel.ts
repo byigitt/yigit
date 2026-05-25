@@ -97,6 +97,7 @@ type SourceControlPanelState = {
   stageEntry: (entry: SourceControlEntry) => Promise<void>;
   unstageEntry: (entry: SourceControlEntry) => Promise<void>;
   toggleStageFile: (entry: SourceControlFileEntry) => Promise<void>;
+  toggleStageFiles: (entries: SourceControlFileEntry[]) => Promise<void>;
   toggleAll: () => Promise<void>;
   requestDiscardEntry: (entry: SourceControlEntry) => void;
   requestDiscardFile: (entry: SourceControlFileEntry) => void;
@@ -821,6 +822,38 @@ export function useSourceControlPanel(
     [repo, runMutation],
   );
 
+  /**
+   * Stage or unstage many files in a single Git call. Intent: if any file is
+   * not fully staged, stage them all; if every file is fully staged, unstage
+   * them all. Used by the tree view's folder checkboxes.
+   */
+  const toggleStageFiles = useCallback(
+    async (entries: SourceControlFileEntry[]) => {
+      if (!repo || entries.length === 0) return;
+      const allChecked = entries.every((e) => e.checkState === "checked");
+      const paths = entries.map((e) => e.path);
+      const pathSet = new Set(paths);
+      // Stable busy key — first path is enough to disambiguate concurrent ops.
+      const key = `${allChecked ? "unstage" : "stage"}:bulk:${paths[0]}`;
+      if (allChecked) {
+        await runMutation(
+          key,
+          (s) => optimisticUnstage(s, pathSet),
+          () => native.gitUnstage(repo.repoRoot, paths),
+          paths,
+        );
+      } else {
+        await runMutation(
+          key,
+          (s) => optimisticStage(s, pathSet),
+          () => native.gitStage(repo.repoRoot, paths),
+          paths,
+        );
+      }
+    },
+    [repo, runMutation],
+  );
+
   const toggleAll = useCallback(async () => {
     if (headerCheckState === "checked") await unstageAllEntries();
     else await stageAllEntries();
@@ -1014,6 +1047,7 @@ export function useSourceControlPanel(
     stageEntry,
     unstageEntry,
     toggleStageFile,
+    toggleStageFiles,
     toggleAll,
     requestDiscardEntry,
     requestDiscardFile,

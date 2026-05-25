@@ -32,6 +32,8 @@ import {
   FolderCloudIcon,
   FolderGitTwoIcon,
   GitBranchIcon,
+  ListTreeIcon,
+  ListViewIcon,
   Refresh01Icon,
   RemoveSquareIcon,
 } from "@hugeicons/core-free-icons";
@@ -53,6 +55,15 @@ import {
   type CheckState,
   type SourceControlFileEntry,
 } from "./useSourceControlPanel";
+import {
+  buildTree,
+  collectFileEntries,
+  compactFolders,
+  flattenTree,
+  folderCheckState,
+  type FlatTreeNode,
+  type TreeFolderNode,
+} from "./lib/tree";
 
 type Props = {
   open: boolean;
@@ -76,10 +87,42 @@ const ROW_HEIGHTS = {
   entry: 30,
 } as const;
 
+type ViewMode = "list" | "tree";
+
+const VIEW_MODE_STORAGE_KEY = "terax-scm-view-mode";
+
+function readStoredViewMode(): ViewMode {
+  if (typeof window === "undefined") return "tree";
+  try {
+    const raw = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    return raw === "list" ? "list" : "tree";
+  } catch {
+    return "tree";
+  }
+}
+
+function persistViewMode(mode: ViewMode): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+  } catch {
+    // ignore storage quota / privacy errors
+  }
+}
+
 type RowDescriptor =
   | { kind: "banner-diverged"; key: string }
   | { kind: "list-header"; key: string; count: number }
-  | { kind: "entry"; key: string; entry: SourceControlFileEntry };
+  | { kind: "entry"; key: string; entry: SourceControlFileEntry; depth: number }
+  | {
+      kind: "folder";
+      key: string;
+      folder: TreeFolderNode;
+      depth: number;
+      collapsed: boolean;
+      checkState: CheckState;
+      childFiles: SourceControlFileEntry[];
+    };
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -138,6 +181,25 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
+  const [viewMode, setViewModeState] = useState<ViewMode>(readStoredViewMode);
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleViewMode = useCallback(() => {
+    setViewModeState((curr) => {
+      const next: ViewMode = curr === "tree" ? "list" : "tree";
+      persistViewMode(next);
+      return next;
+    });
+  }, []);
+  const toggleFolderCollapsed = useCallback((path: string) => {
+    setCollapsedFolders((curr) => {
+      const next = new Set(curr);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -245,18 +307,51 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     if (isDiverged) {
       result.push({ kind: "banner-diverged", key: "banner-diverged" });
     }
-    if (changedCount > 0) {
-      result.push({
-        kind: "list-header",
-        key: "list-header",
-        count: changedCount,
-      });
+    if (changedCount === 0) return result;
+    result.push({
+      kind: "list-header",
+      key: "list-header",
+      count: changedCount,
+    });
+    if (viewMode === "list") {
       for (const entry of scm.fileEntries) {
-        result.push({ kind: "entry", key: entry.key, entry });
+        result.push({ kind: "entry", key: entry.key, entry, depth: 0 });
+      }
+      return result;
+    }
+    // Tree view: group by directory, compact single-child chains, flatten with
+    // the user's collapse set, and emit one row per visible node.
+    const tree = compactFolders(buildTree(scm.fileEntries));
+    const flat: FlatTreeNode[] = flattenTree(tree, collapsedFolders);
+    for (const node of flat) {
+      if (node.kind === "folder") {
+        const childFiles = collectFileEntries(node.folder);
+        result.push({
+          kind: "folder",
+          key: `folder:${node.folder.path}`,
+          folder: node.folder,
+          depth: node.depth,
+          collapsed: collapsedFolders.has(node.folder.path),
+          checkState: folderCheckState(node.folder),
+          childFiles,
+        });
+      } else {
+        result.push({
+          kind: "entry",
+          key: node.entry.key,
+          entry: node.entry,
+          depth: node.depth,
+        });
       }
     }
     return result;
-  }, [changedCount, isDiverged, scm.fileEntries]);
+  }, [
+    changedCount,
+    collapsedFolders,
+    isDiverged,
+    scm.fileEntries,
+    viewMode,
+  ]);
 
   const rowKeyToIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -274,7 +369,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const focusableIndices = useMemo(() => {
     const out: number[] = [];
     rows.forEach((row, index) => {
-      if (row.kind === "entry") out.push(index);
+      if (row.kind === "entry" || row.kind === "folder") out.push(index);
     });
     return out;
   }, [rows]);
@@ -289,6 +384,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         case "list-header":
           return ROW_HEIGHTS.header;
         case "entry":
+        case "folder":
           return ROW_HEIGHTS.entry;
       }
     },
@@ -323,13 +419,17 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     [focusableIndices, focusedRowKey, rowKeyToIndex, rows, virtualizer],
   );
 
-  const focusedEntry = useCallback((): SourceControlFileEntry | null => {
+  const focusedRow = useCallback((): RowDescriptor | null => {
     if (!focusedRowKey) return null;
     const index = rowKeyToIndex.get(focusedRowKey);
     if (index === undefined) return null;
-    const row = rows[index];
-    return row && row.kind === "entry" ? row.entry : null;
+    return rows[index] ?? null;
   }, [focusedRowKey, rowKeyToIndex, rows]);
+
+  const focusedEntry = useCallback((): SourceControlFileEntry | null => {
+    const row = focusedRow();
+    return row && row.kind === "entry" ? row.entry : null;
+  }, [focusedRow]);
 
   const handlePanelKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
@@ -357,11 +457,31 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           event.preventDefault();
           moveFocus(-1);
           break;
-        case "Enter": {
-          const entry = focusedEntry();
-          if (entry) {
+        case "ArrowLeft": {
+          const row = focusedRow();
+          if (row && row.kind === "folder" && !row.collapsed) {
             event.preventDefault();
-            void scm.selectFile(entry);
+            toggleFolderCollapsed(row.folder.path);
+          }
+          break;
+        }
+        case "ArrowRight": {
+          const row = focusedRow();
+          if (row && row.kind === "folder" && row.collapsed) {
+            event.preventDefault();
+            toggleFolderCollapsed(row.folder.path);
+          }
+          break;
+        }
+        case "Enter": {
+          const row = focusedRow();
+          if (!row) break;
+          if (row.kind === "folder") {
+            event.preventDefault();
+            toggleFolderCollapsed(row.folder.path);
+          } else if (row.kind === "entry") {
+            event.preventDefault();
+            void scm.selectFile(row.entry);
           }
           break;
         }
@@ -369,10 +489,14 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         case "s":
         case "S": {
           if (meta) break;
-          const entry = focusedEntry();
-          if (entry) {
+          const row = focusedRow();
+          if (!row) break;
+          if (row.kind === "folder") {
             event.preventDefault();
-            void scm.toggleStageFile(entry);
+            void scm.toggleStageFiles(row.childFiles);
+          } else if (row.kind === "entry") {
+            event.preventDefault();
+            void scm.toggleStageFile(row.entry);
           }
           break;
         }
@@ -388,7 +512,14 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         }
       }
     },
-    [focusedEntry, handleRefresh, moveFocus, scm],
+    [
+      focusedEntry,
+      focusedRow,
+      handleRefresh,
+      moveFocus,
+      scm,
+      toggleFolderCollapsed,
+    ],
   );
 
   if (!open) return null;
@@ -482,6 +613,21 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                   strokeWidth={1.9}
                 />
               )}
+            </IconActionButton>
+            <IconActionButton
+              label={
+                viewMode === "tree"
+                  ? "Switch to list view"
+                  : "Switch to tree view"
+              }
+              onClick={toggleViewMode}
+              side="bottom"
+            >
+              <HugeiconsIcon
+                icon={viewMode === "tree" ? ListViewIcon : ListTreeIcon}
+                size={14}
+                strokeWidth={1.85}
+              />
             </IconActionButton>
             <IconActionButton
               label="Refresh source control"
@@ -737,6 +883,8 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                             onToggleAll={scm.toggleAll}
                             onSelectFile={scm.selectFile}
                             onToggleStageFile={scm.toggleStageFile}
+                            onToggleStageFiles={scm.toggleStageFiles}
+                            onToggleFolderCollapsed={toggleFolderCollapsed}
                             onDiscardFile={scm.requestDiscardFile}
                           />
                         </div>
@@ -833,7 +981,9 @@ type RowRendererProps = {
   onToggleAll: () => Promise<void> | void;
   onSelectFile: (entry: SourceControlFileEntry) => Promise<void>;
   onToggleStageFile: (entry: SourceControlFileEntry) => Promise<void>;
+  onToggleStageFiles: (entries: SourceControlFileEntry[]) => Promise<void>;
   onDiscardFile: (entry: SourceControlFileEntry) => void;
+  onToggleFolderCollapsed: (path: string) => void;
 };
 
 const RowRenderer = memo(function RowRenderer(props: RowRendererProps) {
@@ -843,6 +993,8 @@ const RowRenderer = memo(function RowRenderer(props: RowRendererProps) {
       return <DivergedBanner />;
     case "list-header":
       return <ListHeader {...props} row={row} />;
+    case "folder":
+      return <FolderRow {...props} row={row} />;
     case "entry":
       return <EntryRow {...props} row={row} />;
   }
@@ -929,8 +1081,9 @@ const EntryRow = memo(function EntryRow({
       role="option"
       aria-selected={isSelected}
       onMouseDown={() => onFocusRow(row.key)}
+      style={{ paddingLeft: 8 + row.depth * 14 }}
       className={cn(
-        "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
+        "group relative flex h-[30px] items-center gap-2 rounded-md pr-2 transition-all duration-100",
         focused
           ? "bg-accent/60"
           : isSelected
@@ -940,12 +1093,13 @@ const EntryRow = memo(function EntryRow({
     >
       <span
         className={cn(
-          "pointer-events-none absolute inset-y-1 left-0 w-[2px] rounded-full transition-opacity",
+          "pointer-events-none absolute inset-y-1 w-[2px] rounded-full transition-opacity",
           statusAccent(entry.statusCode),
           isSelected || focused
             ? "opacity-100"
             : "opacity-55 group-hover:opacity-95",
         )}
+        style={{ left: row.depth * 14 }}
         aria-hidden
       />
       <button
@@ -1011,6 +1165,73 @@ const EntryRow = memo(function EntryRow({
             checked={checkboxValue(entry.checkState)}
             disabled={disabled}
             onCheckedChange={() => void onToggleStageFile(entry)}
+            className="size-3.5"
+          />
+        )}
+      </span>
+    </div>
+  );
+});
+
+const FolderRow = memo(function FolderRow({
+  row,
+  focused,
+  actionBusy,
+  onFocusRow,
+  onToggleStageFiles,
+  onToggleFolderCollapsed,
+}: RowRendererProps & {
+  row: Extract<RowDescriptor, { kind: "folder" }>;
+}) {
+  const disabled = actionBusy !== null;
+  // Match optimistic-stage busy keys from `toggleStageFiles` so the spinner
+  // appears on the active folder while the bulk Git call is in flight.
+  const firstPath = row.childFiles[0]?.path ?? "";
+  const isBulkBusy =
+    actionBusy === `stage:bulk:${firstPath}` ||
+    actionBusy === `unstage:bulk:${firstPath}`;
+  return (
+    <div
+      id={`scm-row-${row.key}`}
+      data-focused={focused || undefined}
+      role="treeitem"
+      aria-expanded={!row.collapsed}
+      aria-level={row.depth + 1}
+      onMouseDown={() => onFocusRow(row.key)}
+      style={{ paddingLeft: 8 + row.depth * 14 }}
+      className={cn(
+        "group relative flex h-[30px] items-center gap-1.5 rounded-md pr-2 transition-colors",
+        focused ? "bg-accent/60" : "hover:bg-accent/30",
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          onFocusRow(row.key);
+          onToggleFolderCollapsed(row.folder.path);
+        }}
+        aria-label={row.collapsed ? "Expand folder" : "Collapse folder"}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+      >
+        <HugeiconsIcon
+          icon={row.collapsed ? ArrowRight01Icon : ArrowDown01Icon}
+          size={11}
+          strokeWidth={2}
+          className="shrink-0 text-muted-foreground/85"
+        />
+        <span className="truncate text-[12px] font-medium leading-tight text-foreground/90">
+          {row.folder.displayName}
+        </span>
+      </button>
+      <span className="flex size-5 shrink-0 items-center justify-center">
+        {isBulkBusy ? (
+          <Spinner className="size-3" />
+        ) : (
+          <Checkbox
+            aria-label={`Stage ${row.folder.displayName}`}
+            checked={checkboxValue(row.checkState)}
+            disabled={disabled || row.childFiles.length === 0}
+            onCheckedChange={() => void onToggleStageFiles(row.childFiles)}
             className="size-3.5"
           />
         )}
