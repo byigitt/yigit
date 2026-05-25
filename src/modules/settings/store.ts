@@ -60,6 +60,7 @@ export type Preferences = {
   autostart: boolean;
   restoreWindowState: boolean;
   restoreSession: boolean;
+  confirmTerminalClose: boolean;
   autocompleteEnabled: boolean;
   autocompleteProvider: AutocompleteProviderId;
   autocompleteModelId: string;
@@ -101,6 +102,7 @@ const KEY_CUSTOM_INSTRUCTIONS = "customInstructions";
 const KEY_AUTOSTART = "autostart";
 const KEY_RESTORE_WINDOW = "restoreWindowState";
 const KEY_RESTORE_SESSION = "restoreSession";
+const KEY_CONFIRM_TERMINAL_CLOSE = "confirmTerminalClose";
 const KEY_AUTOCOMPLETE_ENABLED = "autocompleteEnabled";
 const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
@@ -157,6 +159,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autostart: false,
   restoreWindowState: true,
   restoreSession: true,
+  confirmTerminalClose: true,
   autocompleteEnabled: false,
   autocompleteProvider: "cerebras",
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras ?? "",
@@ -237,6 +240,9 @@ export async function loadPreferences(): Promise<Preferences> {
     restoreSession:
       get<boolean>(KEY_RESTORE_SESSION) ??
       DEFAULT_PREFERENCES.restoreSession,
+    confirmTerminalClose:
+      get<boolean>(KEY_CONFIRM_TERMINAL_CLOSE) ??
+      DEFAULT_PREFERENCES.confirmTerminalClose,
     autocompleteEnabled:
       get<boolean>(KEY_AUTOCOMPLETE_ENABLED) ??
       DEFAULT_PREFERENCES.autocompleteEnabled,
@@ -380,6 +386,10 @@ export async function loadRestoreSessionPref(): Promise<boolean> {
     (await store.get<boolean>(KEY_RESTORE_SESSION)) ??
     DEFAULT_PREFERENCES.restoreSession
   );
+}
+
+export async function setConfirmTerminalClose(value: boolean): Promise<void> {
+  await writePref(KEY_CONFIRM_TERMINAL_CLOSE, value);
 }
 
 export async function setAutocompleteEnabled(value: boolean): Promise<void> {

@@ -700,6 +700,9 @@ export default function App() {
       if (!live.has(k)) searchAddons.current.delete(k);
   }, [tabs]);
 
+  const confirmTerminalClose = usePreferencesStore(
+    (s) => s.confirmTerminalClose,
+  );
   const handleClose = useCallback(
     (id: number) => {
       const t = tabs.find((x) => x.id === id);
@@ -707,9 +710,13 @@ export default function App() {
         setPendingCloseTab(id);
         return;
       }
+      if (t?.kind === "terminal" && confirmTerminalClose) {
+        setPendingCloseTab(id);
+        return;
+      }
       disposeTab(id);
     },
-    [tabs, disposeTab],
+    [tabs, disposeTab, confirmTerminalClose],
   );
 
   const confirmClose = useCallback(() => {
@@ -1617,24 +1624,37 @@ export default function App() {
             onOpenChange={(open) => !open && cancelClose()}
           >
             <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {tabs.find((t) => t.id === pendingCloseTab)?.title
-                    ? `"${
-                        tabs.find((t) => t.id === pendingCloseTab)?.title
-                      }" has unsaved changes. Close anyway?`
-                    : "This file has unsaved changes. Close anyway?"}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel onClick={cancelClose}>
-                  Cancel
-                </AlertDialogCancel>
-                <AlertDialogAction onClick={confirmClose}>
-                  Close Anyway
-                </AlertDialogAction>
-              </AlertDialogFooter>
+              {(() => {
+                const tab = tabs.find((t) => t.id === pendingCloseTab);
+                const isTerminal = tab?.kind === "terminal";
+                const title = tab?.title;
+                return (
+                  <>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {isTerminal ? "Close terminal?" : "Unsaved Changes"}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {isTerminal
+                          ? title
+                            ? `Active processes in "${title}" will be terminated.`
+                            : "Active processes in this terminal will be terminated."
+                          : title
+                            ? `"${title}" has unsaved changes. Close anyway?`
+                            : "This file has unsaved changes. Close anyway?"}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel onClick={cancelClose}>
+                        Cancel
+                      </AlertDialogCancel>
+                      <AlertDialogAction onClick={confirmClose}>
+                        {isTerminal ? "Close Terminal" : "Close Anyway"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </>
+                );
+              })()}
             </AlertDialogContent>
           </AlertDialog>
 

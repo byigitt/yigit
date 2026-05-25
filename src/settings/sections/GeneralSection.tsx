@@ -21,6 +21,7 @@ import {
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
+  setConfirmTerminalClose,
   setRestoreSession,
   setRestoreWindowState,
   setShowHidden,
@@ -65,6 +66,9 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const restoreSession = usePreferencesStore((s) => s.restoreSession);
+  const confirmTerminalClose = usePreferencesStore(
+    (s) => s.confirmTerminalClose,
+  );
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const terminalWebglEnabled = usePreferencesStore(
@@ -293,6 +297,15 @@ export function GeneralSection() {
               ))}
             </SelectContent>
           </Select>
+        </SettingRow>
+        <SettingRow
+          title="Confirm before closing terminal"
+          description="Warn that active processes will be terminated. Other tab kinds always close without a prompt."
+        >
+          <Switch
+            checked={confirmTerminalClose}
+            onCheckedChange={(v) => void setConfirmTerminalClose(v)}
+          />
         </SettingRow>
       </div>
 
