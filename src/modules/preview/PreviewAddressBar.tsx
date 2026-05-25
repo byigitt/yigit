@@ -8,6 +8,7 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   ArrowReloadHorizontalIcon,
+  CodeIcon,
   Globe02Icon,
   LinkSquare02Icon,
 } from "@hugeicons/core-free-icons";
@@ -55,10 +56,14 @@ type Props = {
   url: string;
   onSubmit: (url: string) => void;
   onReload: () => void;
+  onOpenDevTools: () => void;
 };
 
 export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
-  function PreviewAddressBar({ url, onSubmit, onReload }, ref) {
+  function PreviewAddressBar(
+    { url, onSubmit, onReload, onOpenDevTools },
+    ref,
+  ) {
     const [draft, setDraft] = useState(url);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -184,6 +189,16 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
             }}
           />
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onOpenDevTools}
+          title="Open developer tools (F12)"
+          className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <HugeiconsIcon icon={CodeIcon} size={14} strokeWidth={1.75} />
+        </Button>
         <Button
           type="button"
           variant="ghost"

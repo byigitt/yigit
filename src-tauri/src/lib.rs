@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{agent, fs, git, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, net, preview, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
@@ -82,6 +82,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     let _ = window;
     Ok(())
 }
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -177,6 +178,9 @@ pub fn run() {
             workspace::workspace_current_dir,
             get_launch_dir,
             open_settings_window,
+            preview::preview_navigate,
+            preview::preview_reload,
+            preview::preview_open_devtools,
             agent::agent_enable_claude_hooks,
             agent::agent_claude_hooks_status,
             secrets::secrets_get,

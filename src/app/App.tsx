@@ -502,6 +502,28 @@ export default function App() {
     void useSnippetsStore.getState().hydrate();
   }, [hydrateSessions]);
 
+  // F12 opens devtools scoped to the active preview's webview. Each preview
+  // tab is a Tauri child webview with its own devtools instance, so the
+  // panel shows the previewed page only, never the Terax shell.
+  const activePreviewIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const t = tabs.find((x) => x.id === activeId);
+    activePreviewIdRef.current = t?.kind === "preview" ? t.id : null;
+  }, [tabs, activeId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F12") return;
+      const id = activePreviewIdRef.current;
+      if (id === null) return;
+      e.preventDefault();
+      void invoke("preview_open_devtools", { label: `preview-${id}` }).catch(
+        console.error,
+      );
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const activeTab = tabs.find((t) => t.id === activeId);
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";

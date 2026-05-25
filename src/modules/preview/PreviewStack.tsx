@@ -75,6 +75,7 @@ export function PreviewStack({
           >
             <PreviewPane
               ref={getRefCallback(t.id)}
+              paneId={t.id}
               url={t.url}
               visible={visible}
               onUrlChange={getUrlCallback(t.id)}
