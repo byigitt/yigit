@@ -93,7 +93,6 @@ export function TerminalStack({
           >
             <PaneTreeView
               node={t.paneTree}
-              tabId={t.id}
               tabVisible={tabVisible}
               activeLeafId={t.activeLeafId}
               onFocusLeaf={(leafId) => onFocusLeaf(t.id, leafId)}

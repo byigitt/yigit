@@ -28,8 +28,7 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { EditorTab, Tab } from "./lib/useTabs";
 
 type Props = {
@@ -50,18 +49,6 @@ type Props = {
     targetId: number,
     position: "before" | "after",
   ) => void;
-  /**
-   * Merge a dragged terminal tab into another terminal tab's pane tree as a
-   * new split next to `targetLeafId`. `position` picks the side relative to
-   * the target along `dir` (row=horizontal, col=vertical).
-   */
-  onDropOntoPane: (
-    sourceTabId: number,
-    targetTabId: number,
-    targetLeafId: number,
-    dir: "row" | "col",
-    position: "before" | "after",
-  ) => void;
   /** Set a user-defined display label for the tab. `null` clears it. */
   onRename: (id: number, title: string | null) => void;
   compact?: boolean;
@@ -69,33 +56,12 @@ type Props = {
 
 type DropPosition = "before" | "after";
 
-type PaneDropSide = "left" | "right" | "top" | "bottom";
-
 type DragState = {
   sourceId: number;
   startX: number;
   startY: number;
   pointerId: number;
   started: boolean;
-};
-
-type PaneDropTarget = {
-  tabId: number;
-  leafId: number;
-  side: PaneDropSide;
-  // Cached viewport rect of the pane for overlay positioning. Re-read each
-  // pointermove so the indicator follows window resizes.
-  rect: { left: number; top: number; width: number; height: number };
-};
-
-const SIDE_TO_SPLIT: Record<
-  PaneDropSide,
-  { dir: "row" | "col"; position: "before" | "after" }
-> = {
-  left: { dir: "row", position: "before" },
-  right: { dir: "row", position: "after" },
-  top: { dir: "col", position: "before" },
-  bottom: { dir: "col", position: "after" },
 };
 
 // Movement (in px) before pointerdown promotes to a drag rather than a click.
@@ -113,7 +79,6 @@ export function TabBar({
   onClose,
   onPin,
   onReorder,
-  onDropOntoPane,
   onRename,
   compact,
 }: Props) {
@@ -155,9 +120,6 @@ export function TabBar({
   // Set immediately after a drag completes so the click event that follows
   // pointerup can be suppressed — otherwise the source tab activates on drop.
   const justDraggedRef = useRef(false);
-  const [paneDropTarget, setPaneDropTarget] = useState<PaneDropTarget | null>(
-    null,
-  );
 
   const hitTestTab = useCallback(
     (clientX: number, clientY: number) => {
@@ -191,58 +153,6 @@ export function TabBar({
       const id = raw ? Number.parseInt(raw, 10) : Number.NaN;
       if (Number.isNaN(id)) return null;
       return { id, rect: best.getBoundingClientRect() };
-    },
-    [],
-  );
-
-  // Track which tab ids are terminals — only those can be dropped onto a
-  // pane (otherwise the merge has no terminal session to graft).
-  const terminalTabIds = useMemo(() => {
-    const set = new Set<number>();
-    for (const t of tabs) if (t.kind === "terminal") set.add(t.id);
-    return set;
-  }, [tabs]);
-
-  /**
-   * Hit-test against terminal pane elements anywhere on screen. Returns null
-   * when the cursor isn't over a recognizable pane.
-   */
-  const hitTestPane = useCallback(
-    (clientX: number, clientY: number): PaneDropTarget | null => {
-      const el = document.elementFromPoint(clientX, clientY);
-      if (!el) return null;
-      const paneEl = el.closest<HTMLElement>("[data-pane-leaf]");
-      if (!paneEl) return null;
-      const tabRaw = paneEl.dataset.paneTab;
-      const leafRaw = paneEl.dataset.paneLeaf;
-      const tabId = tabRaw ? Number.parseInt(tabRaw, 10) : Number.NaN;
-      const leafId = leafRaw ? Number.parseInt(leafRaw, 10) : Number.NaN;
-      if (Number.isNaN(tabId) || Number.isNaN(leafId)) return null;
-      const rect = paneEl.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
-      // Diagonals carve the pane into four triangles (top/right/bottom/left)
-      // meeting at the center — the classic VS Code drop affordance.
-      const nx = (clientX - rect.left) / rect.width;
-      const ny = (clientY - rect.top) / rect.height;
-      const side: PaneDropSide =
-        ny < nx
-          ? ny < 1 - nx
-            ? "top"
-            : "right"
-          : ny < 1 - nx
-            ? "left"
-            : "bottom";
-      return {
-        tabId,
-        leafId,
-        side,
-        rect: {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-        },
-      };
     },
     [],
   );
@@ -281,45 +191,18 @@ export function TabBar({
         e.currentTarget.setPointerCapture(e.pointerId);
         setDraggingId(state.sourceId);
       }
-      const tabHit = hitTestTab(e.clientX, e.clientY);
-      if (tabHit && tabHit.id !== state.sourceId) {
-        const pos: DropPosition =
-          e.clientX < tabHit.rect.left + tabHit.rect.width / 2
-            ? "before"
-            : "after";
-        setDropTarget((curr) =>
-          curr && curr.id === tabHit.id && curr.pos === pos
-            ? curr
-            : { id: tabHit.id, pos },
-        );
-        // Tab-bar hit wins over pane hit while the cursor is in the bar.
-        setPaneDropTarget((curr) => (curr === null ? curr : null));
+      const hit = hitTestTab(e.clientX, e.clientY);
+      if (!hit || hit.id === state.sourceId) {
+        setDropTarget((curr) => (curr === null ? curr : null));
         return;
       }
-      setDropTarget((curr) => (curr === null ? curr : null));
-      // Pane drop is only allowed when the source tab itself is a terminal.
-      // We don't merge editor/preview/diff tabs into terminal pane trees.
-      const paneHit = terminalTabIds.has(state.sourceId)
-        ? hitTestPane(e.clientX, e.clientY)
-        : null;
-      if (!paneHit) {
-        setPaneDropTarget((curr) => (curr === null ? curr : null));
-        return;
-      }
-      setPaneDropTarget((curr) =>
-        curr &&
-        curr.tabId === paneHit.tabId &&
-        curr.leafId === paneHit.leafId &&
-        curr.side === paneHit.side &&
-        curr.rect.left === paneHit.rect.left &&
-        curr.rect.top === paneHit.rect.top &&
-        curr.rect.width === paneHit.rect.width &&
-        curr.rect.height === paneHit.rect.height
-          ? curr
-          : paneHit,
+      const pos: DropPosition =
+        e.clientX < hit.rect.left + hit.rect.width / 2 ? "before" : "after";
+      setDropTarget((curr) =>
+        curr && curr.id === hit.id && curr.pos === pos ? curr : { id: hit.id, pos },
       );
     },
-    [hitTestPane, hitTestTab, terminalTabIds],
+    [hitTestTab],
   );
 
   const handlePointerUp = useCallback(
@@ -327,12 +210,10 @@ export function TabBar({
       const state = dragStateRef.current;
       if (!state || state.pointerId !== e.pointerId) return;
       const wasDrag = state.started;
-      const tabTarget = dropTarget;
-      const paneTarget = paneDropTarget;
+      const target = dropTarget;
       dragStateRef.current = null;
       setDraggingId(null);
       setDropTarget(null);
-      setPaneDropTarget(null);
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
@@ -340,31 +221,16 @@ export function TabBar({
       // Block the synthetic click that follows pointerup so the source tab
       // doesn't get activated on drop.
       justDraggedRef.current = true;
-      // Pane drop takes priority — if the cursor ended over a pane, that's
-      // the user's intent.
-      if (paneTarget) {
-        const { dir, position } = SIDE_TO_SPLIT[paneTarget.side];
-        onDropOntoPane(
-          state.sourceId,
-          paneTarget.tabId,
-          paneTarget.leafId,
-          dir,
-          position,
-        );
-        return;
-      }
-      if (!tabTarget || tabTarget.id === state.sourceId) return;
-      onReorder(state.sourceId, tabTarget.id, tabTarget.pos);
+      if (!target || target.id === state.sourceId) return;
+      onReorder(state.sourceId, target.id, target.pos);
     },
-    [dropTarget, onDropOntoPane, onReorder, paneDropTarget],
+    [dropTarget, onReorder],
   );
-
 
   const handlePointerCancel = useCallback(() => {
     dragStateRef.current = null;
     setDraggingId(null);
     setDropTarget(null);
-    setPaneDropTarget(null);
   }, []);
 
   const handleClickCapture = useCallback((e: React.MouseEvent) => {
@@ -404,8 +270,6 @@ export function TabBar({
   }, [tabs, renamingId]);
 
   return (
-    <>
-      <PaneDropOverlay target={paneDropTarget} />
     <div
       ref={scrollRef}
       className="min-w-0 shrink overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -647,68 +511,6 @@ export function TabBar({
         </DropdownMenu>
       </div>
     </div>
-    </>
-  );
-}
-
-function PaneDropOverlay({ target }: { target: PaneDropTarget | null }) {
-  if (target === null || typeof document === "undefined") return null;
-  const { rect, side } = target;
-  // Compute the highlight covering the half-pane that will receive the new
-  // split. Position is absolute against the viewport.
-  const half = (() => {
-    switch (side) {
-      case "left":
-        return {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width / 2,
-          height: rect.height,
-        };
-      case "right":
-        return {
-          left: rect.left + rect.width / 2,
-          top: rect.top,
-          width: rect.width / 2,
-          height: rect.height,
-        };
-      case "top":
-        return {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height / 2,
-        };
-      case "bottom":
-        return {
-          left: rect.left,
-          top: rect.top + rect.height / 2,
-          width: rect.width,
-          height: rect.height / 2,
-        };
-    }
-  })();
-  return createPortal(
-    <>
-      {/* Outline of the full pane so the user sees the active drop target. */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed z-[60] rounded-sm ring-2 ring-primary/40 ring-inset transition-[left,top,width,height] duration-100 ease-out"
-        style={{
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-        }}
-      />
-      {/* Filled half indicating where the dragged pane lands. */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed z-[60] bg-primary/20 ring-1 ring-primary/50 ring-inset transition-[left,top,width,height] duration-100 ease-out"
-        style={half}
-      />
-    </>,
-    document.body,
   );
 }
 

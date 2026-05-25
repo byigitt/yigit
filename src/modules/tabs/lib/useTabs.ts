@@ -8,7 +8,6 @@ import {
   setLeafCwd as setLeafCwdInTree,
   siblingLeafOf,
   splitLeaf,
-  mergeIntoLeaf,
   type PaneNode,
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
@@ -693,65 +692,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [],
   );
 
-  /**
-   * Drag a terminal tab onto an existing terminal pane: the source tab's
-   * pane tree is grafted into the target tab next to `targetLeafId`, then the
-   * source tab is removed. Use `position` to choose which side of the target
-   * receives the new pane.
-   *
-   * No-ops when either tab isn't a terminal, when source === target, or when
-   * combining would exceed the per-tab pane cap.
-   */
-  const mergeTabIntoPane = useCallback(
-    (
-      sourceTabId: number,
-      targetTabId: number,
-      targetLeafId: number,
-      dir: SplitDir,
-      position: "before" | "after",
-    ) => {
-      if (sourceTabId === targetTabId) return;
-      const curr = tabsRef.current;
-      const source = curr.find((t) => t.id === sourceTabId);
-      const target = curr.find((t) => t.id === targetTabId);
-      if (!source || source.kind !== "terminal") return;
-      if (!target || target.kind !== "terminal") return;
-      if (!hasLeaf(target.paneTree, targetLeafId)) return;
-      const combinedLeaves =
-        leafIds(source.paneTree).length + leafIds(target.paneTree).length;
-      if (combinedLeaves > MAX_PANES_PER_TAB) return;
-      const newSplitId = nextIdRef.current++;
-      const newTree = mergeIntoLeaf(
-        target.paneTree,
-        targetLeafId,
-        source.paneTree,
-        newSplitId,
-        dir,
-        position,
-      );
-      const droppedActive = source.activeLeafId;
-      const next = curr
-        .filter((t) => t.id !== sourceTabId)
-        .map((t) =>
-          t.id === targetTabId
-            ? {
-                ...t,
-                paneTree: newTree,
-                // Focus follows the dragged terminal — feels natural after the
-                // user just placed it.
-                activeLeafId: droppedActive,
-              }
-            : t,
-        );
-      tabsRef.current = next;
-      setTabs(next);
-      // If the source tab was active, switch focus to the target since it now
-      // contains what used to be the source.
-      setActiveId((active) => (active === sourceTabId ? targetTabId : active));
-    },
-    [],
-  );
-
   const selectByIndex = useCallback(
     (idx: number) => {
       const t = tabs[idx];
@@ -947,7 +887,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     closeTab,
     updateTab,
     reorderTab,
-    mergeTabIntoPane,
     selectByIndex,
     setLeafCwd,
     focusPane,

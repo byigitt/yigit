@@ -17,7 +17,6 @@ type LeafBundle = {
 
 type Props = {
   node: PaneNode;
-  tabId: number;
   tabVisible: boolean;
   activeLeafId: number;
   onFocusLeaf: (leafId: number) => void;
@@ -26,7 +25,6 @@ type Props = {
 
 export function PaneTreeView({
   node,
-  tabId,
   tabVisible,
   activeLeafId,
   onFocusLeaf,
@@ -46,7 +44,6 @@ export function PaneTreeView({
           if (!focused) onFocusLeaf(node.id);
         }}
         data-pane-leaf={node.id}
-        data-pane-tab={tabId}
         className="relative h-full w-full"
       >
         <TerminalPane
@@ -73,7 +70,6 @@ export function PaneTreeView({
           <ResizablePanel id={`pane-${child.id}`} minSize="10%">
             <PaneTreeView
               node={child}
-              tabId={tabId}
               tabVisible={tabVisible}
               activeLeafId={activeLeafId}
               onFocusLeaf={onFocusLeaf}
