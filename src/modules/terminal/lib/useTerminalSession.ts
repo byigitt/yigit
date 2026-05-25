@@ -452,7 +452,11 @@ export function useTerminalSession({
       setSlotFocused(leafId, focused);
       if (focused) focusSlot(leafId);
     } else if (s.hasSlot) {
-      unbindLeafFromSlot(leafId, s);
+      // Stay bound on hide — pool eviction (pickSlotFor) handles capacity when
+      // a new leaf needs a slot. Releasing eagerly would force a serialize +
+      // replay round-trip on every tab switch and truncates scrollback past
+      // SNAPSHOT_SCROLLBACK_CAP. Just drop focus so the cursor stops blinking.
+      setSlotFocused(leafId, false);
     }
   }, [leafId, visible, focused]);
 
