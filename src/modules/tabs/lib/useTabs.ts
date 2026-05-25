@@ -63,6 +63,15 @@ export type MarkdownTab = {
   path: string;
 };
 
+export type ImageTab = {
+  id: number;
+  kind: "image";
+  title: string;
+  /** User-set label that overrides the derived one. */
+  customTitle?: string;
+  path: string;
+};
+
 export type AiDiffStatus = "pending" | "approved" | "rejected";
 
 export type AiDiffTab = {
@@ -121,6 +130,7 @@ export type Tab =
   | EditorTab
   | PreviewTab
   | MarkdownTab
+  | ImageTab
   | AiDiffTab
   | GitDiffTab
   | GitHistoryTab
@@ -458,6 +468,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return targetId;
   }, []);
 
+  const newImageTab = useCallback((path: string) => {
+    let targetId: number | null = null;
+    setTabs((curr) => {
+      const existing = curr.find(
+        (t) => t.kind === "image" && t.path === path,
+      );
+      if (existing) {
+        targetId = existing.id;
+        return curr;
+      }
+      const id = nextIdRef.current++;
+      targetId = id;
+      return [...curr, { id, kind: "image", title: basename(path), path }];
+    });
+    if (targetId !== null) setActiveId(targetId);
+    return targetId;
+  }, []);
+
   const openGitDiffTab = useCallback(
     (input: {
       path: string;
@@ -658,6 +686,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...x,
             ...customTitlePatch,
             ...(patch.title !== undefined && { title: patch.title }),
+          };
+        }
+        if (x.kind === "image") {
+          return {
+            ...x,
+            ...customTitlePatch,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.path !== undefined && { path: patch.path }),
           };
         }
         if (x.kind === "editor") {
@@ -878,6 +914,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    newImageTab,
     openAiDiffTab,
     openGitDiffTab,
     openCommitHistoryTab,

@@ -3,12 +3,14 @@ use std::time::UNIX_EPOCH;
 use std::{fs, io::Write};
 
 use serde::Serialize;
+use tauri::ipc::Response;
 use tauri::Emitter;
 use tempfile::NamedTempFile;
 
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+const MAX_BINARY_READ_BYTES: u64 = 25 * 1024 * 1024; // 25 MB
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
 #[derive(Serialize)]
@@ -137,6 +139,28 @@ pub fn fs_canonicalize(path: String, workspace: Option<WorkspaceEnv>) -> Result<
 }
 
 #[tauri::command]
+pub fn fs_read_file_bytes(
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Response, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
+    let meta = std::fs::metadata(&p).map_err(|e| {
+        log::debug!("fs_read_file_bytes stat({}) failed: {e}", p.display());
+        e.to_string()
+    })?;
+    let size = meta.len();
+    if size > MAX_BINARY_READ_BYTES {
+        return Err(format!("toolarge:{size}:{MAX_BINARY_READ_BYTES}"));
+    }
+    let bytes = std::fs::read(&p).map_err(|e| {
+        log::debug!("fs_read_file_bytes read({}) failed: {e}", p.display());
+        e.to_string()
+    })?;
+    Ok(Response::new(bytes))
+}
+
+#[tauri::command]
 pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);
@@ -176,6 +200,26 @@ mod tests {
                 assert_eq!(size, 11);
             }
             _ => panic!("expected text"),
+        }
+    }
+
+    #[test]
+    fn read_file_bytes_returns_ok_for_small_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("a.bin");
+        std::fs::write(&f, b"\x89PNG\r\n\x1a\n").unwrap();
+        assert!(fs_read_file_bytes(f.to_string_lossy().into_owned(), None).is_ok());
+    }
+
+    #[test]
+    fn read_file_bytes_rejects_oversize() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("big.bin");
+        let big = vec![0u8; (MAX_BINARY_READ_BYTES + 1) as usize];
+        std::fs::write(&f, &big).unwrap();
+        match fs_read_file_bytes(f.to_string_lossy().into_owned(), None) {
+            Err(err) => assert!(err.starts_with("toolarge:")),
+            Ok(_) => panic!("expected toolarge error"),
         }
     }
 

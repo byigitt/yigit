@@ -61,6 +61,7 @@ import {
   type SearchInlineHandle,
   type SearchTarget,
 } from "@/modules/header";
+import { ImageStack, isImagePath } from "@/modules/image";
 import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
@@ -171,6 +172,7 @@ export default function App() {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    newImageTab,
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
@@ -463,6 +465,7 @@ export default function App() {
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
   const isMarkdownTab = activeTab?.kind === "markdown";
+  const isImageTab = activeTab?.kind === "image";
   const isAiDiffTab = activeTab?.kind === "ai-diff";
   const isGitDiffTab =
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
@@ -835,17 +838,25 @@ export default function App() {
 
   const handleOpenFile = useCallback(
     (path: string, pin?: boolean) => {
+      // Images can't render in the code editor, route them to the image
+      // preview stack regardless of pin (always a persistent tab).
+      if (isImagePath(path)) {
+        newImageTab(path);
+        return;
+      }
       // Explorer defaults to preview (pin=false); explicit actions like
       // context-menu "Open" pass pin=true for a persistent tab.
       openFileTab(path, pin ?? false);
     },
-    [openFileTab],
+    [openFileTab, newImageTab],
   );
 
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
       for (const t of tabs) {
-        if (t.kind !== "editor") continue;
+        if (t.kind !== "editor" && t.kind !== "image" && t.kind !== "markdown") {
+          continue;
+        }
         if (t.path === from) {
           const i = to.lastIndexOf("/");
           updateTab(t.id, { path: to, title: i === -1 ? to : to.slice(i + 1) });
@@ -878,11 +889,15 @@ export default function App() {
     (path: string) => {
       const dirty: number[] = [];
       for (const t of tabs) {
-        if (t.kind !== "editor") continue;
-        if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
-        if (t.dirty) {
-          dirty.push(t.id);
-        } else {
+        if (t.kind === "editor") {
+          if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
+          if (t.dirty) {
+            dirty.push(t.id);
+          } else {
+            disposeTab(t.id);
+          }
+        } else if (t.kind === "image" || t.kind === "markdown") {
+          if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
           disposeTab(t.id);
         }
       }
@@ -1339,6 +1354,15 @@ export default function App() {
         aria-hidden={!isMarkdownTab}
       >
         <MarkdownStack tabs={tabs} activeId={activeId} />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isImageTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isImageTab}
+      >
+        <ImageStack tabs={tabs} activeId={activeId} />
       </div>
       <div
         className={cn(
