@@ -1,7 +1,5 @@
 export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 export { TerminalStack } from "./TerminalStack";
-export { BottomTerminalPanel } from "./BottomTerminalPanel";
-export { useBottomTerminal } from "./lib/useBottomTerminal";
 export {
   disposeSession,
   leafIdForPty,

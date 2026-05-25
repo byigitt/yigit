@@ -85,9 +85,7 @@ import {
   hasLeaf,
   leafIds,
   respawnSession,
-  BottomTerminalPanel,
   TerminalStack,
-  useBottomTerminal,
   whenSessionReady,
   writeToSession,
   type TerminalPaneHandle,
@@ -218,8 +216,6 @@ export default function App() {
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
-  const bottomPanelRef = useRef<PanelImperativeHandle | null>(null);
-  const bottomTerminal = useBottomTerminal();
   const sidebarWidthRef = useRef(readSidebarWidth());
   const sidebarWidthWriteTimerRef = useRef(0);
   const [sidebarView, setSidebarViewState] = useState<SidebarViewId>(readSidebarView);
@@ -236,35 +232,6 @@ export default function App() {
     if (!p) return;
     if (p.getSize().asPercentage <= 0) p.expand();
     else p.collapse();
-  }, []);
-
-  const toggleBottomTerminal = useCallback(() => {
-    const p = bottomPanelRef.current;
-    if (!p) return;
-    const collapsed = p.getSize().asPercentage <= 0;
-    if (collapsed) {
-      // First-open: spawn the initial pane and expand to a reasonable default.
-      bottomTerminal.ensureInitial(getLaunchDir());
-      p.resize("30%");
-    } else {
-      p.collapse();
-    }
-  }, [bottomTerminal]);
-
-  const splitBottomTerminal = useCallback(
-    (dir: "row" | "col") => {
-      bottomTerminal.splitActive(dir);
-    },
-    [bottomTerminal],
-  );
-
-  const closeBottomTerminalActive = useCallback(() => {
-    const emptied = bottomTerminal.closeActive();
-    if (emptied) bottomPanelRef.current?.collapse();
-  }, [bottomTerminal]);
-
-  const hideBottomTerminal = useCallback(() => {
-    bottomPanelRef.current?.collapse();
   }, []);
   const cycleSidebarView = useCallback(
     (view: SidebarViewId) => {
@@ -1061,7 +1028,6 @@ export default function App() {
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
       "pane.source": toggleSourceControl,
-      "terminal.togglePanel": toggleBottomTerminal,
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
@@ -1086,7 +1052,6 @@ export default function App() {
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
       toggleSourceControl,
-      toggleBottomTerminal,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
@@ -1494,47 +1459,9 @@ export default function App() {
               <ResizableHandle withHandle />
               <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
                 <div className="flex h-full min-h-0 flex-col">
-                  <ResizablePanelGroup
-                    orientation="vertical"
-                    className="min-h-0 flex-1"
-                  >
-                    <ResizablePanel
-                      id="workspace-main"
-                      defaultSize={70}
-                      minSize={20}
-                    >
-                      <div className="relative h-full min-h-0">
-                        {workspaceSurface}
-                      </div>
-                    </ResizablePanel>
-                    <ResizableHandle />
-                    <ResizablePanel
-                      id="bottom-terminal"
-                      panelRef={bottomPanelRef}
-                      collapsible
-                      collapsedSize={0}
-                      defaultSize={0}
-                      minSize={10}
-                    >
-                      {bottomTerminal.state ? (
-                        <BottomTerminalPanel
-                          paneTree={bottomTerminal.state.paneTree}
-                          activeLeafId={bottomTerminal.state.activeLeafId}
-                          paneCount={leafIds(bottomTerminal.state.paneTree).length}
-                          canSplit={
-                            leafIds(bottomTerminal.state.paneTree).length <
-                            bottomTerminal.maxPanes
-                          }
-                          onSplit={splitBottomTerminal}
-                          onCloseActive={closeBottomTerminalActive}
-                          onHide={hideBottomTerminal}
-                          onFocusLeaf={bottomTerminal.focusLeaf}
-                          onCwd={bottomTerminal.setLeafCwd}
-                          onExit={() => closeBottomTerminalActive()}
-                        />
-                      ) : null}
-                    </ResizablePanel>
-                  </ResizablePanelGroup>
+                  <div className="relative min-h-0 flex-1">
+                    {workspaceSurface}
+                  </div>
 
                   {keysLoaded ? (
                     <motion.div
