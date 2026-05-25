@@ -114,6 +114,9 @@ configureRendererPool({
         s.pty?.write(data);
       },
       resizePty: (cols, rows) => {
+        // Guard against transient 0-size containers (e.g. a collapsed
+        // resizable panel) — PTYs reject or behave erratically at 0 dims.
+        if (cols <= 0 || rows <= 0) return;
         s.cols = cols;
         s.rows = rows;
         s.pty?.resize(cols, rows);

@@ -18,6 +18,7 @@ export type ShortcutId =
   | "pane.focusNext"
   | "pane.focusPrev"
   | "pane.source"
+  | "terminal.togglePanel"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -129,6 +130,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle source panel",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
+  },
+  {
+    id: "terminal.togglePanel",
+    label: "Toggle bottom terminal",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
   },
   {
     id: "tab.next",
