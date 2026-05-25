@@ -1,0 +1,10 @@
+- [x] Tabları drag and drop ile reorganize edebilme.
+- [x] Tabların isimlerini değiştirebilme.
+- [x] Terminallerde scrollback kaybı fix.
+- [x] Connect any AI provider kısmını kapatabilelim alt tarafta "Open AI Agent" kısmına basınca o popup asla gitmiyor.
+- [x] Source Control kısmında dosyaları tree gibi gösterme Visual Studio Code'de var, bunda da olsun güzel görünüyor.
+- [-] CMD+J ile alttan ekstra yeni bir terminal açıp bu terminali sağa sola doğru sürükleyip birden fazla terminal kısmı oluşturma (tek kısımda), Visual Studio Code gibi.
+- [x] PNG, JPG veya JPEG gibi formatlarla preview sistemi.
+- [x] OMP kullanırken sürekli "terax: dropped output during hibernation" hatası alıyorum bi süre sonra.
+- [x] Bi süre sonra rastgele rgb:1414/1919/1c1c11 spamlanıyor terminale.
+- [x] Middle Click yaparsak tab'a direkt kapansın.

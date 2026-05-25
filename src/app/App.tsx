@@ -118,6 +118,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -328,6 +329,7 @@ export default function App() {
 
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
+  const [pendingWindowClose, setPendingWindowClose] = useState(false);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
@@ -501,6 +503,37 @@ export default function App() {
     void useAgentsStore.getState().hydrate();
     void useSnippetsStore.getState().hydrate();
   }, [hydrateSessions]);
+
+  // Intercept native window-close requests (Cmd+W on the last tab, the X
+  // button, the macOS Window menu). The JS keydown preventDefault doesn't
+  // block AppKit's menu-driven close, so we hook Tauri's CloseRequested
+  // event and surface our own confirm dialog when terminal sessions are at
+  // risk. `destroy()` from the dialog bypasses this listener.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void getCurrentWindow()
+      .onCloseRequested((event) => {
+        const confirmOn =
+          usePreferencesStore.getState().confirmTerminalClose;
+        if (!confirmOn) return;
+        const hasTerminals = tabsRef.current.some(
+          (t) => t.kind === "terminal",
+        );
+        if (!hasTerminals) return;
+        event.preventDefault();
+        setPendingWindowClose(true);
+      })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((e) => console.error("onCloseRequested setup failed", e));
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   // F12 opens devtools scoped to the active preview's webview. Each preview
   // tab is a Tauri child webview with its own devtools instance, so the
@@ -728,8 +761,16 @@ export default function App() {
   const handleClose = useCallback(
     (id: number) => {
       const t = tabs.find((x) => x.id === id);
+      // Dirty editor: ask before discarding the buffer.
       if (t?.kind === "editor" && t.dirty) {
         setPendingCloseTab(id);
+        return;
+      }
+      // Last tab: closing it would leave an empty window, so escalate to a
+      // window close. The onCloseRequested handler below applies the
+      // terminal-confirm dialog when needed.
+      if (tabs.length === 1) {
+        void getCurrentWindow().close();
         return;
       }
       if (t?.kind === "terminal" && confirmTerminalClose) {
@@ -742,11 +783,12 @@ export default function App() {
   );
 
   const confirmClose = useCallback(() => {
-    if (pendingCloseTab !== null) {
-      disposeTab(pendingCloseTab);
-      setPendingCloseTab(null);
-    }
-  }, [pendingCloseTab, disposeTab]);
+    if (pendingCloseTab === null) return;
+    const isLastTab = tabs.length <= 1;
+    disposeTab(pendingCloseTab);
+    setPendingCloseTab(null);
+    if (isLastTab) void getCurrentWindow().close();
+  }, [pendingCloseTab, disposeTab, tabs]);
 
   const cancelClose = useCallback(() => {
     setPendingCloseTab(null);
@@ -1706,6 +1748,35 @@ export default function App() {
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmDeleteClose}>
                   Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingWindowClose}
+            onOpenChange={(open) => !open && setPendingWindowClose(false)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Quit yigit?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Active terminal processes will be terminated.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  onClick={() => setPendingWindowClose(false)}
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setPendingWindowClose(false);
+                    void getCurrentWindow().destroy();
+                  }}
+                >
+                  Quit
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
