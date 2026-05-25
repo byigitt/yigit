@@ -74,7 +74,14 @@ const PROVIDER_ICON = {
   ollama: ServerStack01Icon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
-export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
+export function AiOpenButton({
+  onOpen,
+  isOpen = false,
+}: {
+  onOpen: () => void;
+  /** Renders the button in a "close" state — same slot, inverted intent. */
+  isOpen?: boolean;
+}) {
   return (
     <motion.button
       initial={{ y: -15 }}
@@ -82,12 +89,14 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-6 items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs",
-        "text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground",
+        "flex h-6 items-center gap-1.5 rounded-md border px-2 text-xs transition-colors",
+        isOpen
+          ? "border-border bg-accent text-foreground hover:bg-accent/70"
+          : "border-border/60 bg-card text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground",
       )}
-      title="Open AI agent"
+      title={isOpen ? "Close AI agent" : "Open AI agent"}
     >
-      <span>Open AI agent</span>
+      <span>{isOpen ? "Close AI agent" : "Open AI agent"}</span>
       <Kbd className="h-4 min-w-4 px-1">{fmtShortcut(MOD_KEY, "I")}</Kbd>
     </motion.button>
   );
