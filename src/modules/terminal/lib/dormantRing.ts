@@ -1,6 +1,9 @@
-const DEFAULT_BYTE_CAP = 256 * 1024;
-const DEFAULT_CHUNK_CAP = 256;
-
+// Per-session buffer for PTY bytes that arrive while the renderer slot is
+// evicted from the pool. Sized to cover a typical build, test run, or AI
+// tool transcript without dropping the oldest output; idle rings stay
+// near-zero because chunks aren't allocated until something streams.
+const DEFAULT_BYTE_CAP = 4 * 1024 * 1024;
+const DEFAULT_CHUNK_CAP = 4096;
 const OVERFLOW_NOTICE = new TextEncoder().encode(
   "\x1bc\x1b[2m[terax: dropped output during hibernation]\x1b[0m\r\n",
 );
