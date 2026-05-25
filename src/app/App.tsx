@@ -1396,6 +1396,7 @@ export default function App() {
             onClose={handleClose}
             onPin={pinTab}
             onReorder={reorderTab}
+            onRename={(id, title) => updateTab(id, { customTitle: title })}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={

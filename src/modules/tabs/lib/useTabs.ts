@@ -20,6 +20,8 @@ export type TerminalTab = {
   id: number;
   kind: "terminal";
   title: string;
+  /** User-set label that overrides the derived one (e.g. cwd basename). */
+  customTitle?: string;
   cwd?: string;
   paneTree: PaneNode;
   activeLeafId: number;
@@ -31,6 +33,8 @@ export type EditorTab = {
   id: number;
   kind: "editor";
   title: string;
+  /** User-set label that overrides the derived one. */
+  customTitle?: string;
   path: string;
   dirty: boolean;
   /**
@@ -45,6 +49,8 @@ export type PreviewTab = {
   id: number;
   kind: "preview";
   title: string;
+  /** User-set label that overrides the derived one. */
+  customTitle?: string;
   url: string;
 };
 
@@ -52,6 +58,8 @@ export type MarkdownTab = {
   id: number;
   kind: "markdown";
   title: string;
+  /** User-set label that overrides the derived one. */
+  customTitle?: string;
   path: string;
 };
 
@@ -61,6 +69,8 @@ export type AiDiffTab = {
   id: number;
   kind: "ai-diff";
   title: string;
+  /** User-set label that overrides the derived one. */
+  customTitle?: string;
   path: string;
   /** "" for newly created files. */
   originalContent: string;
@@ -75,6 +85,8 @@ export type GitDiffTab = {
   id: number;
   kind: "git-diff";
   title: string;
+  /** User-set label that overrides the derived one. */
+  customTitle?: string;
   path: string;
   repoRoot: string;
   mode: "-" | "+";
@@ -85,6 +97,8 @@ export type GitHistoryTab = {
   id: number;
   kind: "git-history";
   title: string;
+  /** User-set label that overrides the derived one. */
+  customTitle?: string;
   repoRoot: string;
 };
 
@@ -92,6 +106,8 @@ export type GitCommitFileDiffTab = {
   id: number;
   kind: "git-commit-file";
   title: string;
+  /** User-set label that overrides the derived one. */
+  customTitle?: string;
   repoRoot: string;
   sha: string;
   shortSha: string;
@@ -112,6 +128,8 @@ export type Tab =
 
 export type TabPatch = Partial<{
   title: string;
+  /** User-set label override. Pass `null` to clear. */
+  customTitle: string | null;
   cwd: string;
   path: string;
   dirty: boolean;
@@ -608,9 +626,18 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setTabs((t) =>
       t.map((x) => {
         if (x.id !== id) return x;
+        // customTitle applies to every kind: `undefined` leaves it, `null`
+        // clears it, any string sets it.
+        const customTitlePatch =
+          patch.customTitle === undefined
+            ? {}
+            : patch.customTitle === null
+              ? { customTitle: undefined }
+              : { customTitle: patch.customTitle };
         if (x.kind === "terminal") {
           return {
             ...x,
+            ...customTitlePatch,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.cwd !== undefined && { cwd: patch.cwd }),
           };
@@ -618,6 +645,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         if (x.kind === "preview") {
           return {
             ...x,
+            ...customTitlePatch,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.url !== undefined && {
               url: patch.url,
@@ -628,20 +656,29 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         if (x.kind === "markdown") {
           return {
             ...x,
+            ...customTitlePatch,
             ...(patch.title !== undefined && { title: patch.title }),
           };
         }
-        // editor tab: auto-promote from preview the moment the file becomes dirty.
-        const autoPin =
-          patch.dirty === true && (x as EditorTab).preview
-            ? { preview: false }
-            : {};
+        if (x.kind === "editor") {
+          // editor tab: auto-promote from preview the moment the file becomes dirty.
+          const autoPin =
+            patch.dirty === true && x.preview ? { preview: false } : {};
+          return {
+            ...x,
+            ...customTitlePatch,
+            ...autoPin,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.dirty !== undefined && { dirty: patch.dirty }),
+            ...(patch.path !== undefined && { path: patch.path }),
+          };
+        }
+        // ai-diff, git-diff, git-history, git-commit-file — only title/customTitle
+        // is meaningful.
         return {
           ...x,
-          ...autoPin,
+          ...customTitlePatch,
           ...(patch.title !== undefined && { title: patch.title }),
-          ...(patch.dirty !== undefined && { dirty: patch.dirty }),
-          ...(patch.path !== undefined && { path: patch.path }),
         };
       }),
     );
