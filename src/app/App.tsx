@@ -504,7 +504,7 @@ export default function App() {
 
   // F12 opens devtools scoped to the active preview's webview. Each preview
   // tab is a Tauri child webview with its own devtools instance, so the
-  // panel shows the previewed page only, never the Terax shell.
+  // panel shows the previewed page only, never the yigit shell.
   const activePreviewIdRef = useRef<number | null>(null);
   useEffect(() => {
     const t = tabs.find((x) => x.id === activeId);

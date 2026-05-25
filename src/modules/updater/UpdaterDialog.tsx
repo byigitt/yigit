@@ -21,7 +21,7 @@ function distroCommand(key: DistroKey, version: string): string {
     case "debian":
       return `sudo apt install ./Terax_${version}_amd64.deb`;
     case "fedora":
-      return `sudo dnf install ./Terax-${version}-1.x86_64.rpm`;
+      return `sudo dnf install ./yigit-${version}-1.x86_64.rpm`;
   }
 }
 
@@ -92,12 +92,12 @@ export function UpdaterDialog() {
               : downloading
                 ? "Downloading update…"
                 : manual
-                  ? `Terax v${manual.version} is available`
-                  : `Terax v${update?.version} is available`}
+                  ? `yigit v${manual.version} is available`
+                  : `yigit v${update?.version} is available`}
           </DialogTitle>
           <DialogDescription>
             {ready
-              ? "Restart Terax to finish installing."
+              ? "Restart yigit to finish installing."
               : downloading
                 ? progress !== null
                   ? `${progress.toFixed(0)}% — ${formatBytes(status.downloaded)}`
