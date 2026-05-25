@@ -178,6 +178,7 @@ export default function App() {
     openCommitFileDiffTab,
     closeTab,
     updateTab,
+    reorderTab,
     selectByIndex,
     setLeafCwd,
     focusPane,
@@ -1394,6 +1395,7 @@ export default function App() {
             onNewGitGraph={openGitGraphFromContext}
             onClose={handleClose}
             onPin={pinTab}
+            onReorder={reorderTab}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={

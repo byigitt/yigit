@@ -132,6 +132,34 @@ function titleFromUrl(url: string): string {
   }
 }
 
+/**
+ * Move tab `sourceId` to land just before or after `targetId` in the list.
+ * Returns the input unchanged when the move would be a no-op so React can
+ * bail out of re-renders.
+ */
+export function reorderTabs<T extends { id: number }>(
+  list: T[],
+  sourceId: number,
+  targetId: number,
+  position: "before" | "after",
+): T[] {
+  if (sourceId === targetId) return list;
+  const fromIdx = list.findIndex((t) => t.id === sourceId);
+  if (fromIdx === -1) return list;
+  const without = list.filter((_, i) => i !== fromIdx);
+  const anchorIdx = without.findIndex((t) => t.id === targetId);
+  if (anchorIdx === -1) return list;
+  const insertIdx = position === "before" ? anchorIdx : anchorIdx + 1;
+  // Same effective position — bail.
+  if (insertIdx === fromIdx) return list;
+  const moved = list[fromIdx];
+  return [
+    ...without.slice(0, insertIdx),
+    moved,
+    ...without.slice(insertIdx),
+  ];
+}
+
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const tabId = 1;
@@ -619,6 +647,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     );
   }, []);
 
+  const reorderTab = useCallback(
+    (sourceId: number, targetId: number, position: "before" | "after") => {
+      if (sourceId === targetId) return;
+      setTabs((curr) => reorderTabs(curr, sourceId, targetId, position));
+    },
+    [],
+  );
+
   const selectByIndex = useCallback(
     (idx: number) => {
       const t = tabs[idx];
@@ -813,6 +849,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     closeAiDiffTab,
     closeTab,
     updateTab,
+    reorderTab,
     selectByIndex,
     setLeafCwd,
     focusPane,
