@@ -22,6 +22,11 @@ export function leafIds(n: PaneNode): PaneId[] {
   return n.children.flatMap(leafIds);
 }
 
+export function allPaneIds(n: PaneNode): PaneId[] {
+  if (isLeaf(n)) return [n.id];
+  return [n.id, ...n.children.flatMap(allPaneIds)];
+}
+
 export function findLeafCwd(n: PaneNode, id: PaneId): string | undefined {
   if (isLeaf(n)) return n.id === id ? n.cwd : undefined;
   for (const c of n.children) {

@@ -188,8 +188,17 @@ export function reorderTabs<T extends { id: number }>(
   ];
 }
 
-export function useTabs(initial?: Partial<TerminalTab>) {
+export type UseTabsOptions = {
+  initial?: Partial<TerminalTab>;
+  /** Pre-loaded session: when present, replaces the default tab list and
+   *  seeds the id counter past every restored tab/pane id. */
+  restore?: { tabs: Tab[]; activeId: number; nextId: number };
+};
+
+export function useTabs(options?: UseTabsOptions) {
+  const { initial, restore } = options ?? {};
   const [tabs, setTabs] = useState<Tab[]>(() => {
+    if (restore && restore.tabs.length > 0) return restore.tabs;
     const tabId = 1;
     const leafId = 2;
     return [
@@ -203,8 +212,12 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       },
     ];
   });
-  const [activeId, setActiveId] = useState(1);
-  const nextIdRef = useRef(3);
+  const [activeId, setActiveId] = useState(() =>
+    restore && restore.tabs.length > 0 ? restore.activeId : 1,
+  );
+  const nextIdRef = useRef(
+    restore && restore.tabs.length > 0 ? restore.nextId : 3,
+  );
   const tabsRef = useRef(tabs);
 
   useEffect(() => {

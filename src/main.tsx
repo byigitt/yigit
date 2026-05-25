@@ -11,6 +11,8 @@ import ReactDOM from "react-dom/client";
 import App from "./app/App";
 import { initLaunchDir } from "./lib/launchDir";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+import { preloadInitialSession } from "@/modules/session";
+import { loadRestoreSessionPref } from "@/modules/settings/store";
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
@@ -21,6 +23,13 @@ await invoke("pty_close_all").catch(() => {});
 
 // Seed before first paint so default tab mounts at target cwd (no flicker).
 await initLaunchDir();
+
+// Restore last session (if enabled) before render so we don't briefly paint
+// the default terminal tab and then replace it.
+{
+  const restoreOn = await loadRestoreSessionPref().catch(() => true);
+  await preloadInitialSession(restoreOn);
+}
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <App />,

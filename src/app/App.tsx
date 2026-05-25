@@ -64,6 +64,12 @@ import {
 import { ImageStack, isImagePath } from "@/modules/image";
 import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
+import {
+  clearSession,
+  maxRestoredId,
+  saveSession,
+  takeInitialSession,
+} from "@/modules/session";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged, setThemeId as persistThemeId } from "@/modules/settings/store";
@@ -160,6 +166,11 @@ function readSidebarView(): SidebarViewId {
   return "explorer";
 }
 
+// Drained once at module load — strict-mode double mount must not replay
+// the restored state (which would then live alongside the already-mounted
+// useTabs state).
+const initialSession = takeInitialSession();
+
 export default function App() {
   const {
     tabs,
@@ -189,7 +200,16 @@ export default function App() {
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
-  } = useTabs(getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
+  } = useTabs({
+    initial: getLaunchDir() ? { cwd: getLaunchDir() } : undefined,
+    restore: initialSession
+      ? {
+          tabs: initialSession.tabs,
+          activeId: initialSession.activeId,
+          nextId: maxRestoredId(initialSession) + 1,
+        }
+      : undefined,
+  });
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
@@ -452,6 +472,28 @@ export default function App() {
     if (!prefsHydrated) return;
     setSelectedModelId(prefDefaultModel);
   }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
+
+  // Persist tabs + activeId so the next launch can restore them. We debounce
+  // so rapid edits (split, rename, drag) don't write on every keystroke.
+  // When the user disables the toggle we clear the file once so a future
+  // re-enable starts from the current session, not a stale snapshot.
+  const restoreSession = usePreferencesStore((s) => s.restoreSession);
+  const lastClearedRef = useRef(false);
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    if (!restoreSession) {
+      if (!lastClearedRef.current) {
+        lastClearedRef.current = true;
+        void clearSession();
+      }
+      return;
+    }
+    lastClearedRef.current = false;
+    const t = window.setTimeout(() => {
+      void saveSession({ tabs, activeId });
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [tabs, activeId, prefsHydrated, restoreSession]);
 
   const hydrateSessions = useChatStore((s) => s.hydrateSessions);
   useEffect(() => {
