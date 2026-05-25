@@ -179,6 +179,7 @@ export default function App() {
     closeTab,
     updateTab,
     reorderTab,
+    mergeTabIntoPane,
     selectByIndex,
     setLeafCwd,
     focusPane,
@@ -1396,6 +1397,7 @@ export default function App() {
             onClose={handleClose}
             onPin={pinTab}
             onReorder={reorderTab}
+            onDropOntoPane={mergeTabIntoPane}
             onRename={(id, title) => updateTab(id, { customTitle: title })}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}

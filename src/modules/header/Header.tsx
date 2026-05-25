@@ -48,6 +48,13 @@ type Props = {
     targetId: number,
     position: "before" | "after",
   ) => void;
+  onDropOntoPane: (
+    sourceTabId: number,
+    targetTabId: number,
+    targetLeafId: number,
+    dir: "row" | "col",
+    position: "before" | "after",
+  ) => void;
   onRename: (id: number, title: string | null) => void;
   onToggleSidebar: () => void;
   onSplit: (dir: "row" | "col") => void;
@@ -74,6 +81,7 @@ export function Header({
   onClose,
   onPin,
   onReorder,
+  onDropOntoPane,
   onRename,
   onToggleSidebar,
   onSplit,
@@ -209,6 +217,7 @@ export function Header({
           onClose={onClose}
           onPin={onPin}
           onReorder={onReorder}
+          onDropOntoPane={onDropOntoPane}
           onRename={onRename}
           compact={compact}
         />
