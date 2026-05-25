@@ -299,9 +299,15 @@ export function TabBar({
       setDropTarget((curr) => (curr === null ? curr : null));
       // Pane drop is only allowed when the source tab itself is a terminal.
       // We don't merge editor/preview/diff tabs into terminal pane trees.
-      const paneHit = terminalTabIds.has(state.sourceId)
-        ? hitTestPane(e.clientX, e.clientY)
-        : null;
+      const isTerminalSource = terminalTabIds.has(state.sourceId);
+      const paneHit =
+        isTerminalSource ? hitTestPane(e.clientX, e.clientY) : null;
+      // Self-drop has no meaning (you can't split a pane with itself) — drop
+      // the overlay so the user sees no false affordance.
+      if (paneHit && paneHit.tabId === state.sourceId) {
+        setPaneDropTarget((curr) => (curr === null ? curr : null));
+        return;
+      }
       if (!paneHit) {
         setPaneDropTarget((curr) => (curr === null ? curr : null));
         return;
@@ -338,8 +344,19 @@ export function TabBar({
       }
       if (!wasDrag) return;
       // Block the synthetic click that follows pointerup so the source tab
-      // doesn't get activated on drop.
+      // doesn't get activated on drop. setPointerCapture changes click
+      // targeting subtly across browsers; suppressing at the document level
+      // (capture phase) is the most reliable cross-platform path.
       justDraggedRef.current = true;
+      const swallowClick = (ev: MouseEvent) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        document.removeEventListener("click", swallowClick, true);
+      };
+      document.addEventListener("click", swallowClick, true);
+      window.setTimeout(() => {
+        document.removeEventListener("click", swallowClick, true);
+      }, 50);
       // Pane drop takes priority — if the cursor ended over a pane, that's
       // the user's intent.
       if (paneTarget) {
@@ -693,7 +710,7 @@ function PaneDropOverlay({ target }: { target: PaneDropTarget | null }) {
       {/* Outline of the full pane so the user sees the active drop target. */}
       <div
         aria-hidden
-        className="pointer-events-none fixed z-[60] rounded-sm ring-2 ring-primary/40 ring-inset transition-[left,top,width,height] duration-100 ease-out"
+        className="pointer-events-none fixed z-[9999] rounded ring-2 ring-primary/70 ring-inset transition-[left,top,width,height] duration-100 ease-out"
         style={{
           left: rect.left,
           top: rect.top,
@@ -704,7 +721,7 @@ function PaneDropOverlay({ target }: { target: PaneDropTarget | null }) {
       {/* Filled half indicating where the dragged pane lands. */}
       <div
         aria-hidden
-        className="pointer-events-none fixed z-[60] bg-primary/20 ring-1 ring-primary/50 ring-inset transition-[left,top,width,height] duration-100 ease-out"
+        className="pointer-events-none fixed z-[9999] bg-primary/35 ring-2 ring-primary ring-inset transition-[left,top,width,height] duration-100 ease-out"
         style={half}
       />
     </>,
