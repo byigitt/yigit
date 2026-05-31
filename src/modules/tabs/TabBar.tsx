@@ -301,8 +301,12 @@ export function TabBar({
                       onPointerUp={handlePointerUp}
                       onPointerCancel={handlePointerCancel}
                       onClickCapture={handleClickCapture}
+                      onMouseDown={(e) => {
+                        if (e.button === 1) e.preventDefault();
+                      }}
                       onAuxClick={(e) => {
-                        if (e.button !== 1 || isRenaming) return;
+                        if (e.button !== 1 || isRenaming || tabs.length <= 1)
+                          return;
                         e.preventDefault();
                         e.stopPropagation();
                         onClose(t.id);

@@ -25,6 +25,7 @@ import {
   AiInputBarConnect,
   AiMiniWindow,
   getAllKeys,
+  getAllCustomEndpointKeys,
   hasAnyKey,
   LocalAgentNotificationsBridge,
   SelectionAskAi,
@@ -87,6 +88,7 @@ import {
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
+  clearFocusedTerminal,
   disposeSession,
   findLeafCwd,
   hasLeaf,
@@ -123,6 +125,22 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
+
+type TuiWaitResult = "ready" | "gone" | "timeout";
+
+async function waitForClaudeTuiReady(
+  readBuf: () => string | null,
+  timeoutMs = 8000,
+): Promise<TuiWaitResult> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const buf = readBuf();
+    if (buf === null) return "gone";
+    if (buf.includes("shortcuts") || buf.includes("? for")) return "ready";
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return "timeout";
+}
 
 function dirname(path: string | null): string | null {
   if (!path) return null;
@@ -417,6 +435,7 @@ export default function App() {
   const panelOpen = useChatStore((s) => s.panelOpen);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setApiKeys = useChatStore((s) => s.setApiKeys);
+  const setCustomEndpointKeys = useChatStore((s) => s.setCustomEndpointKeys);
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
@@ -436,14 +455,17 @@ export default function App() {
   const openaiCompatibleBaseURL = usePreferencesStore(
     (s) => s.openaiCompatibleBaseURL,
   );
+  const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
   const hasLocalModel =
     (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
     (mlxBaseURL.trim().length > 0 && mlxModelId.trim().length > 0) ||
     (ollamaBaseURL.trim().length > 0 && ollamaModelId.trim().length > 0) ||
     (openaiCompatibleBaseURL.trim().length > 0 &&
-      openaiCompatibleModelId.trim().length > 0);
+      openaiCompatibleModelId.trim().length > 0) ||
+    customEndpoints.some((e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0);
   const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
 
+  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -453,6 +475,13 @@ export default function App() {
         setApiKeys(keys);
         setKeysLoaded(true);
       });
+      if (!prefsHydrated) return;
+      void getAllCustomEndpointKeys(
+        usePreferencesStore.getState().customEndpoints,
+      ).then((epKeys) => {
+        if (!alive) return;
+        setCustomEndpointKeys(epKeys);
+      });
     };
     reload();
     const unlistenP = onKeysChanged(reload);
@@ -460,13 +489,12 @@ export default function App() {
       alive = false;
       void unlistenP.then((fn) => fn());
     };
-  }, [setApiKeys]);
+  }, [setApiKeys, setCustomEndpointKeys, prefsHydrated]);
 
   // Hydrate the cross-window preference store and mirror the default model
   // into chatStore so the dropdown reflects what the user picked in Settings.
   const initPrefs = usePreferencesStore((s) => s.init);
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
-  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);
@@ -891,6 +919,9 @@ export default function App() {
     };
     const onUp = (e: MouseEvent) => {
       if (isInsideAi(e.target)) return;
+      const el = e.target as HTMLElement | null;
+      const inContentArea = el?.closest?.(".xterm, .cm-editor");
+      if (!inContentArea) return;
       // Defer one tick so xterm/CodeMirror finalize the selection.
       setTimeout(() => {
         const text = captureActiveSelection();
@@ -1156,6 +1187,9 @@ export default function App() {
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
       "pane.source": toggleSourceControl,
+      "terminal.clear": () => {
+        clearFocusedTerminal();
+      },
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
@@ -1204,6 +1238,13 @@ export default function App() {
         if (!inTerminal) return false;
         const sel = captureActiveSelection();
         return !sel || !sel.trim();
+      }
+      if (id === "terminal.clear") {
+        // Only intercept ⌘K while a terminal is focused; elsewhere let the key
+        // fall through (we never preventDefault when disabled).
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        return !(target as HTMLElement | null)?.closest?.(".xterm");
       }
       return false;
     },
@@ -1377,22 +1418,43 @@ export default function App() {
         return true;
       },
       spawnManagedAgent: (prompt: string, sessionId: string) => {
-        const oneLine = prompt.replace(/\s*\r?\n\s*/g, " ").trim();
-        if (!oneLine) return null;
+        const trimmed = prompt.trim();
+        if (!trimmed) return null;
+        const oneLine = trimmed.replace(/\s*\r?\n\s*/g, " ");
         const cwd = findCwd();
         const short = oneLine.length > 32 ? `${oneLine.slice(0, 32)}…` : oneLine;
         const { tabId, leafId } = newAgentTab(cwd ?? undefined, `claude · ${short}`);
         useManagedAgentsStore
           .getState()
           .register({ leafId, tabId, sessionId, task: oneLine, cwd });
-        // Claude reads settings.json at startup, so the review-loop hooks must
-        // be in place before the command runs. Best-effort: never block spawn.
         const hooksReady = invoke("agent_enable_claude_hooks").catch(() => {});
-        void Promise.all([whenSessionReady(leafId), hooksReady]).then(() => {
-          if (writeToSession(leafId, `claude ${quoteShellArg(oneLine)}\r`)) {
-            useManagedAgentsStore.getState().setPhase(leafId, "working");
+        void (async () => {
+          await Promise.all([whenSessionReady(leafId), hooksReady]);
+          if (!writeToSession(leafId, "claude\r")) {
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
           }
-        });
+          const readBuf = () => {
+            const term = terminalRefs.current.get(leafId);
+            return term ? term.getBuffer(120) : null;
+          };
+          const result = await waitForClaudeTuiReady(readBuf);
+          if (result !== "ready") {
+            if (result === "timeout") {
+              console.warn(
+                "[terax] Claude TUI did not appear in time; aborting prompt send",
+              );
+            }
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
+          }
+          if (!writeToSession(leafId, `\x1b[200~${trimmed}\x1b[201~`)) {
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
+          }
+          setTimeout(() => writeToSession(leafId, "\r"), 120);
+          useManagedAgentsStore.getState().setPhase(leafId, "working");
+        })();
         return { tabId, leafId };
       },
       readLeafBuffer: (leafId: number) => {

@@ -5,8 +5,10 @@ import {
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_BASE_URL,
+  migrateLegacyCompatEndpoint,
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
+  type CustomEndpoint,
   type ModelId,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
@@ -73,6 +75,7 @@ export type Preferences = {
   openaiCompatibleBaseURL: string;
   openaiCompatibleModelId: string;
   openaiCompatibleContextLimit: number;
+  customEndpoints: CustomEndpoint[];
   openrouterModelId: string;
   favoriteModelIds: string[];
   recentModelIds: string[];
@@ -87,6 +90,8 @@ export type Preferences = {
   zoomLevel: number;
   agentNotifications: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  editorAutoSave: boolean;
+  editorAutoSaveDelay: number;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -115,6 +120,7 @@ const KEY_OLLAMA_MODEL_ID = "ollamaModelId";
 const KEY_OPENAI_COMPAT_BASE_URL = "openaiCompatibleBaseURL";
 const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_OPENAI_COMPAT_CONTEXT_LIMIT = "openaiCompatibleContextLimit";
+const KEY_CUSTOM_ENDPOINTS = "customEndpoints";
 const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
@@ -130,6 +136,8 @@ const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
+const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
+const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -172,6 +180,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleBaseURL: OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   openaiCompatibleModelId: "",
   openaiCompatibleContextLimit: 128_000,
+  customEndpoints: [],
   openrouterModelId: "",
   favoriteModelIds: [],
   recentModelIds: [],
@@ -186,6 +195,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   zoomLevel: 1.0,
   agentNotifications: true,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  editorAutoSave: false,
+  editorAutoSaveDelay: 1000,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -273,6 +284,16 @@ export async function loadPreferences(): Promise<Preferences> {
     openaiCompatibleContextLimit:
       get<number>(KEY_OPENAI_COMPAT_CONTEXT_LIMIT) ??
       DEFAULT_PREFERENCES.openaiCompatibleContextLimit,
+    customEndpoints: (() => {
+      const stored = get<CustomEndpoint[]>(KEY_CUSTOM_ENDPOINTS);
+      if (stored && stored.length > 0) return stored;
+      return migrateLegacyCompatEndpoint(
+        get<string>(KEY_OPENAI_COMPAT_BASE_URL) ?? "",
+        get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ?? "",
+        get<number>(KEY_OPENAI_COMPAT_CONTEXT_LIMIT) ?? 128_000,
+        crypto.randomUUID().slice(0, 8),
+      );
+    })(),
     openrouterModelId:
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
@@ -314,6 +335,13 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    editorAutoSave:
+      get<boolean>(KEY_EDITOR_AUTO_SAVE) ??
+      DEFAULT_PREFERENCES.editorAutoSave,
+    editorAutoSaveDelay: clampAutoSaveDelay(
+      get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
+        DEFAULT_PREFERENCES.editorAutoSaveDelay,
+    ),
   };
 }
 
@@ -447,6 +475,12 @@ export async function setOpenaiCompatibleContextLimit(
   await writePref(KEY_OPENAI_COMPAT_CONTEXT_LIMIT, clamped);
 }
 
+export async function setCustomEndpoints(
+  value: CustomEndpoint[],
+): Promise<void> {
+  await writePref(KEY_CUSTOM_ENDPOINTS, value);
+}
+
 export async function setOpenrouterModelId(value: string): Promise<void> {
   await writePref(KEY_OPENROUTER_MODEL_ID, value);
 }
@@ -510,6 +544,19 @@ export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
 }
 
+function clampAutoSaveDelay(v: number): number {
+  if (!Number.isFinite(v)) return 1000;
+  return Math.min(60000, Math.max(100, Math.round(v)));
+}
+
+export async function setEditorAutoSave(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_AUTO_SAVE, value);
+}
+
+export async function setEditorAutoSaveDelay(value: number): Promise<void> {
+  await writePref(KEY_EDITOR_AUTO_SAVE_DELAY, clampAutoSaveDelay(value));
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
@@ -554,6 +601,7 @@ export async function onPreferencesChange(
     [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
     [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
     [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
+    [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
     [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
@@ -568,6 +616,8 @@ export async function onPreferencesChange(
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
+    [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
